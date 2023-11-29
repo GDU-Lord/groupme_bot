@@ -3,6 +3,7 @@ import Admin from "./admin.js";
 import db from "./db.js";
 import Group from "./group.js";
 import TelegramBot from "node-telegram-bot-api";
+import { onCommunityUpdate } from "./index.js";
 
 export default class Community {
 
@@ -10,7 +11,7 @@ export default class Community {
     try {
       const list = await db.collection("communities").find().toArray() as Community[];
       for(const entry of list)
-        new Community(entry.chatId, entry.admins, entry.groups, entry._id, entry.infoChannelThread);
+        new Community(entry.chatId, entry.admins, entry.groups, entry._id, entry.infoMessageContent, entry.infoMessageId);
     } catch(err) {
       console.error(err);
     }
@@ -25,7 +26,7 @@ export default class Community {
   admins: Admin[];
   groups: Group[];
 
-  constructor(public chatId: TelegramBot.ChatId, admins: Admin[], groups: Group[], _id?: ObjectId, public infoChannelThread: number = -1) {
+  constructor(public chatId: TelegramBot.ChatId, admins: Admin[], groups: Group[], _id?: ObjectId, public infoMessageContent: string = "", public infoMessageId: number = -1) {
     this._id = _id ?? new ObjectId;
     this.admins = admins.map(admin => new Admin(admin.id, admin.name, admin.username, admin.community, admin.owner));
     this.groups = groups.map(group => new Group(group.name, group.description, group.community, group.id, group.members));
@@ -51,11 +52,12 @@ export default class Community {
     }
   }
 
-  async update() {
+  async update(noUpdate: boolean = false) {
     try {
       await db.collection("communities").updateOne({ _id: this._id }, {
         $set: this
       });
+      if(!noUpdate) this.onUpdate(this);
     } catch(err) {
       console.error(err);
     }
@@ -99,9 +101,18 @@ export default class Community {
     await this.update();
   }
 
-  async setInfoChannelThread(infoChannelThread: number) {
-    this.infoChannelThread = infoChannelThread;
-    await this.update();
+  async setInfoMessageContent(infoMessageContent: string) {
+    this.infoMessageContent = infoMessageContent;
+    await this.update(true);
+  }
+
+  async setInfoMessageId(infoMessageId: number) {
+    this.infoMessageId = infoMessageId;
+    await this.update(true);
+  }
+
+  onUpdate(community: Community) {
+    onCommunityUpdate(community);
   }
 
 }

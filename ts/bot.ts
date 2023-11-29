@@ -9,37 +9,48 @@ export const bot = new TelegramBot(
  }
 );
 
+export function TryCatch<type>(func: () => type): type {
+  try {
+    return func();
+  } catch(err) {}
+  return false as type;
+}
+
 export function sendMessage(chatId: TelegramBot.ChatId, message: string, markup?: TelegramBot.SendMessageOptions["reply_markup"], thread_id: number = -1) {
-  return bot.sendMessage(chatId, message, {
+  return TryCatch(() => bot.sendMessage(chatId, message, {
     reply_markup: markup,
-    parse_mode: "Markdown",
+    parse_mode: "HTML",
     message_thread_id: thread_id >= 0 ? thread_id : undefined
-  });
+  }));
 }
 
 export function sendThreadMessage(chatId: TelegramBot.ChatId, thread_id: number = -1, message: string, markup?: TelegramBot.SendMessageOptions["reply_markup"]) {
-  return bot.sendMessage(chatId, message, {
+  return TryCatch(() => bot.sendMessage(chatId, message, {
     reply_markup: markup,
-    parse_mode: "Markdown",
+    parse_mode: "HTML",
     message_thread_id: thread_id
-  });
+  }));
 }
 
 export function replyToMessage(requestMessage: Message, message: string, markup?: TelegramBot.SendMessageOptions["reply_markup"]) {
-  return bot.sendMessage(requestMessage.chat.id, message, {
+  return TryCatch(() => bot.sendMessage(requestMessage.chat.id, message, {
     reply_markup: markup,
-    parse_mode: "Markdown",
+    parse_mode: "HTML",
     reply_to_message_id: requestMessage.message_id
-  });
+  }));
+}
+
+export function deleteMessage(chatId: TelegramBot.ChatId, messageId: number) {
+  return TryCatch(() => bot.deleteMessage(chatId, messageId));
 }
 
 export function addQueryListener(selector: string, callback: QueryListener["callback"]) {
   return new QueryListener((query) => {
-    try {
+    TryCatch(() => {
       const data = JSON.parse(query.data as string) as [string, any?];
       if(data[0] !== selector) return;
       callback(query, data[1]);
-    } catch {}
+    });
   });
 } 
 

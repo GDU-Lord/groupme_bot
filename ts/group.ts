@@ -1,4 +1,3 @@
-import TelegramBot from "node-telegram-bot-api";
 import Member from "./member.js";
 import { ObjectId } from "mongodb";
 import Community from "./community.js";
@@ -22,6 +21,7 @@ export default class Group {
   removeMember(member: Member) {
     if(this.members[member.id] == null)
       return console.error("Group error: 'member' not found at removeMember(member): " + member);
+    delete this.members[member.id];
   }
 
 }
