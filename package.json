@@ -1,0 +1,27 @@
+{
+  "name": "groupme_bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for managing groups of people",
+  "main": "js/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GDU-Lord/groupme_bot.git"
+  },
+  "author": "Dawnlight",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/GDU-Lord/groupme_bot/issues"
+  },
+  "homepage": "https://github.com/GDU-Lord/groupme_bot#readme",
+  "dependencies": {
+    "@types/mongodb": "^4.0.7",
+    "@types/node-telegram-bot-api": "^0.63.3",
+    "dotenv": "^16.3.1",
+    "mongodb": "^6.3.0",
+    "node-telegram-bot-api": "^0.64.0"
+  }
+}
