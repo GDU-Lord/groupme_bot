@@ -62,7 +62,6 @@ export async function onCommunityUpdate(community: Community) {
   const newContent = getGroupLists(community);
   if (community.infoMessageContent === newContent) return;
   community.setInfoMessageContent(newContent);
-  // console.log("EDIT");
   // await bot.TryCatch(async () => {
   //   return await bot.bot.editMessageText(newContent, {
   //     chat_id: community.chatId,
@@ -155,12 +154,12 @@ function setupListeners() {
         await bot.replyToMessage(descMsg, 'Групу "' + name + '" додано до списку!', buttons);
         return true;
       });
-      setTimeout(() => descListener.remove(), +process.env.TIMEOUT!);
-      setTimeout(() => descCancelListener.remove(), +process.env.TIMEOUT!);
+      setTimeout(() => descListener.remove(), +process.env.COMMAND_TIMEOUT!);
+      setTimeout(() => descCancelListener.remove(), +process.env.COMMAND_TIMEOUT!);
       return true;
     });
-    setTimeout(() => nameListener.remove(), +process.env.TIMEOUT!);
-    setTimeout(() => nameCancelListener.remove(), +process.env.TIMEOUT!);
+    setTimeout(() => nameListener.remove(), +process.env.COMMAND_TIMEOUT!);
+    setTimeout(() => nameCancelListener.remove(), +process.env.COMMAND_TIMEOUT!);
     return true;
   });
 
@@ -259,16 +258,16 @@ function setupListeners() {
           await bot.replyToMessage(descMsg, 'Групу "' + name + '" оновлено!', buttons);
           return true;
         });
-        setTimeout(() => descListener.remove(), +process.env.TIMEOUT!);
-        setTimeout(() => descCancelListener.remove(), +process.env.TIMEOUT!);
+        setTimeout(() => descListener.remove(), +process.env.COMMAND_TIMEOUT!);
+        setTimeout(() => descCancelListener.remove(), +process.env.COMMAND_TIMEOUT!);
         return true;
       });
-      setTimeout(() => nameListener.remove(), +process.env.TIMEOUT!);
-      setTimeout(() => nameCancelListener.remove(), +process.env.TIMEOUT!);
+      setTimeout(() => nameListener.remove(), +process.env.COMMAND_TIMEOUT!);
+      setTimeout(() => nameCancelListener.remove(), +process.env.COMMAND_TIMEOUT!);
       return true;
     });
-    setTimeout(() => editQueryListener.remove(), +process.env.TIMEOUT!);
-    setTimeout(() => editCancelQueryListener.remove(), +process.env.TIMEOUT!);
+    setTimeout(() => editQueryListener.remove(), +process.env.COMMAND_TIMEOUT!);
+    setTimeout(() => editCancelQueryListener.remove(), +process.env.COMMAND_TIMEOUT!);
     return true;
   });
 
@@ -276,6 +275,7 @@ function setupListeners() {
     if (!await verifyAuthority(msg, true)) return true;
     const community = Community.list[msg.chat.id];
     const infoMessage = await bot.sendThreadMessage(msg.chat.id, bot.getThreadId(msg), getGroupLists(community));
+    if(infoMessage == null) return true;
     await community.setInfoMessageContent(infoMessage.text ?? "");
     if (infoMessage == null) {
       const buttons = bot.getButtonsMarkup(bot.arrange([["Сховати", msg.message_id]]), "hide_message");
@@ -324,12 +324,10 @@ function setupListeners() {
     const newContent = getGroupLists(community);
     if (community.infoMessageContent === newContent) return;
     community.setInfoMessageContent(newContent);
-    await bot.TryCatch(async () => {
-      return await bot.bot.editMessageText(newContent, {
-        chat_id: community.chatId,
-        message_id: community.infoMessageId,
-        parse_mode: "HTML"
-      });
+    bot.bot.editMessageText(newContent, {
+      chat_id: community.chatId,
+      message_id: community.infoMessageId,
+      parse_mode: "HTML"
     });
   }
 
@@ -353,12 +351,24 @@ function setupListeners() {
       const buttons = bot.getButtonsMarkup(bot.arrange(groups, 2, [["ГОТОВО", initMsg.message_id]]), [...groups.map(() => "set_group"), "close_menu"]);
       let buttons_hash = JSON.stringify(buttons);
       const menuMessage = await bot.replyToMessage(initMsg, `<a href="tg://user?id=${member.id}">@${member.username ?? member.name}</a>, обери, будь ласка, групи, до яких хочеш приєднатися та натисни "ГОТОВО"!\n\nТи зможеш надалі змінювати список своїх груп за допомогою команди /groupme`, buttons);
+      if(menuMessage == null) return true;
+      const abortListener = bot.addCommandListener("groupme", async msg => {
+          if(msg.from?.id !== user.id) return false;
+          abortListener.remove();
+          menuCloseQueryListener.remove();
+          menuQueryListener.remove();
+          await bot.deleteMessage(msg.chat.id, menuMessage.message_id);
+          await bot.deleteMessage(msg.chat.id, initMsg.message_id);
+          return false;
+      });
       const menuCloseQueryListener = bot.addQueryListener("close_menu", async (query, msg_id) => {
         if (query?.from.id !== user.id) return false;
         const msg = query.message;
         if (msg == null) return false;
+        if(msg.message_id !== menuMessage.message_id) return false;
         menuCloseQueryListener.remove();
         menuQueryListener.remove();
+        abortListener.remove();
         await bot.deleteMessage(msg.chat.id, msg.message_id);
         await bot.deleteMessage(msg.chat.id, msg_id);
         await updateInfo(community);
@@ -368,6 +378,7 @@ function setupListeners() {
         if (query?.from.id !== user.id) return false;
         const msg = query.message;
         if (msg == null) return false;
+        if(msg.message_id !== menuMessage.message_id) return false;
         const community = Community.list[msg.chat.id];
         if (community == null) return false;
         const group = community.groups.find(g => g.id.toString() === group_id.toString());
@@ -392,20 +403,21 @@ function setupListeners() {
         let new_buttons_hash = JSON.stringify(buttons);
         if (new_buttons_hash === buttons_hash) return true;
         buttons_hash = new_buttons_hash;
-        await bot.TryCatch(async () => {
-          return await bot.bot.editMessageReplyMarkup(buttons, {
+        try {
+          await bot.bot.editMessageReplyMarkup(buttons, {
             chat_id: community.chatId,
             message_id: menuMessage.message_id
           });
-        });
+        } catch {}
         // setTimeout(async () => {
         //   menuQueryListener.restore();
         // }, 10);
         return true;
       });
-      setTimeout(() => menuCloseQueryListener.remove(), +process.env.TIMEOUT!);
-      setTimeout(() => menuQueryListener.remove(), +process.env.TIMEOUT!);
-      return true;
+      setTimeout(() => menuCloseQueryListener.remove(), +process.env.COMMAND_TIMEOUT!);
+      setTimeout(() => menuQueryListener.remove(), +process.env.COMMAND_TIMEOUT!);
+      setTimeout(() => abortListener.remove(), +process.env.COMMAND_TIMEOUT!);
+      return false;
     };
   }
 
@@ -423,7 +435,25 @@ function setupListeners() {
   //   await initGroupMe(msg.new_chat_member.user)(msg);
   //   return true;
   // });
+
+  bot.onUnhandledQuery(async query => {
+    try {
+      if(query.data == null || query.data === "") return;
+      const json = JSON.parse(query.data);
+      if(json == null) return;
+      if(json[0] !== "hide_message" && json[0] !== "close_menu") return;
+      const msg = query.message;
+      if(msg == null) return;
+      const replyTo = msg.reply_to_message?.message_id;
+      await bot.deleteMessage(msg.chat.id, msg.message_id);
+      if(replyTo == null) return;
+      await bot.deleteMessage(msg.chat.id, replyTo);
+    } catch {}
+  });
+
+  console.log("listening...");
+
 }
 
-setTimeout(() => setupListeners(), 1000*10);
+setTimeout(() => setupListeners(), +process.env.STARTUP_TIMEOUT!);
 
