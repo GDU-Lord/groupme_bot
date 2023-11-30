@@ -425,3 +425,5 @@ function setupListeners() {
   // });
 }
 
+setTimeout(() => setupListeners(), 1000*10);
+
