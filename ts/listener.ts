@@ -24,6 +24,10 @@ export class Listener {
     if(!(this.id.toString() in Listener.list)) return
     delete Listener.list[this.id.toString()];
   }
+
+  restore() {
+    this.init();
+  }
 }
 
 export class MessageListener extends Listener {
