@@ -75,7 +75,7 @@ export function getButtonsMarkup(options: option[][], tags: string | string[]): 
   const inline_keyboard: TelegramBot.InlineKeyboardButton[][] = options.map((row, rowIndex, rows) => row.map((option, index) => {
     const text = option instanceof Array ? option[0] : option;
     const data = option instanceof Array ? option[1] : undefined;
-    const tag = tags instanceof Array ? tags[rowIndex * rows[0].length + index] : tags;
+    const tag = tags instanceof Array ? tags[(rowIndex-1) * rows[0].length + rows[Math.max(rowIndex-1, 0)].length + index] : tags;
     return {
       text: text,
       callback_data: JSON.stringify([tag, data]),

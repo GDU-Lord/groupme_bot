@@ -58,17 +58,7 @@ async function verifyAuthority(msg_query: Message | CallbackQuery, owner = false
 }
 
 export async function onCommunityUpdate(community: Community) {
-  if (community.infoMessageContent === "") return;
-  const newContent = getGroupLists(community);
-  if (community.infoMessageContent === newContent) return;
-  community.setInfoMessageContent(newContent);
-  // await bot.TryCatch(async () => {
-  //   return await bot.bot.editMessageText(newContent, {
-  //     chat_id: community.chatId,
-  //     message_id: community.infoMessageId,
-  //     parse_mode: "HTML"
-  //   });
-  // });
+  
 }
 
 function getGroupLists(community: Community) {
@@ -287,6 +277,70 @@ function setupListeners() {
     return true;
   });
 
+  bot.addCommandListener("addmember", async initMsg => {
+    if (!await verifyAuthority(initMsg)) return true;
+    const community = Community.list[initMsg.chat.id];
+    const groups = community.groups.map(group => {
+      return [group.name, [group.id, initMsg.message_id]] as bot.option;
+    });
+    const buttons = bot.getButtonsMarkup(bot.arrange(groups, 4, [["Скасувати", initMsg.message_id]]), [...groups.map(() => "add_member"), "cancel_add_member"]);
+    await bot.replyToMessage(initMsg, "Оберіть групу, в яку хочете додати учасника <b>РЕДАГУВАТИ</b>", buttons);
+    const addCancelQueryListener = bot.addQueryListener("cancel_add_member", async (query, msg_id) => {
+      if (query.from?.id !== initMsg.from?.id) return false;
+      const msg = query.message;
+      if (msg == null) return false;
+      addQueryListener.remove();
+      addCancelQueryListener.remove();
+      await bot.deleteMessage(msg.chat.id, msg.message_id);
+      const buttons = bot.getButtonsMarkup(bot.arrange([["Сховати", msg_id]]), "hide_message");
+      await bot.sendThreadMessage(msg.chat.id, bot.getThreadId(msg), 'Команду скасовано', buttons);
+      return true;
+    });
+    const addQueryListener = bot.addQueryListener("add_member", async (query, [group_id, msg_id]: [ObjectId, number]) => {
+      if (query.from?.id !== initMsg.from?.id) return false;
+      const msg = query.message;
+      if (msg == null) return false;
+      addQueryListener.remove();
+      addCancelQueryListener.remove();
+      if (!await verifyAuthority(query)) return true;
+      const community = Community.list[msg.chat.id];
+      const group = community.groups.find(group => group.id.toString() === group_id.toString());
+      if (group == null) {
+        const buttons = bot.getButtonsMarkup(bot.arrange(["Сховати"]), "hide_message");
+        await bot.sendThreadMessage(msg.chat.id, bot.getThreadId(msg), 'Помилка!', buttons);
+        return true;
+      }
+      await bot.deleteMessage(msg.chat.id, msg.message_id);
+      const buttons = bot.getButtonsMarkup(bot.arrange([["Сховати", msg_id]]), "hide_message");
+      await bot.sendThreadMessage(msg.chat.id, bot.getThreadId(msg), 'Згадайте учасника спільноти, якого хочете додати до групи "' + group.name + '" (використовуйте "@")\n\n/cancel - cкасувати команду', buttons);
+      const mentionCancelListener = bot.addCommandListener("cancel", async mentionCancelMsg => {
+        if (mentionCancelMsg.from?.id !== initMsg.from?.id) return false;
+        mentionListener.remove();
+        mentionCancelListener.remove();
+        const buttons = bot.getButtonsMarkup(bot.arrange([["Сховати", mentionCancelMsg.message_id]]), "hide_message");
+        await bot.replyToMessage(mentionCancelMsg, 'Команду скасовано', buttons);
+        return true;
+      });
+      const mentionListener = bot.addMessageListener(async mentionMsg => {
+        if (mentionMsg.from?.id !== initMsg.from?.id) return false;
+        const name = mentionMsg.text;
+        if (name == null || name === "") return false;
+        mentionListener.remove();
+        mentionCancelListener.remove();
+        if (!await verifyAuthority(query)) return true;
+        const buttons = bot.getButtonsMarkup(bot.arrange([["Сховати", mentionMsg.message_id]]), "hide_message");
+        await bot.replyToMessage(mentionMsg, 'Учасника "' + name +'" додано до групи "' + group.name + '"!', buttons);
+        return true;
+      });
+      setTimeout(() => mentionListener.remove(), +process.env.COMMAND_TIMEOUT!);
+      setTimeout(() => mentionCancelListener.remove(), +process.env.COMMAND_TIMEOUT!);
+      return true;
+    });
+    setTimeout(() => addQueryListener.remove(), +process.env.COMMAND_TIMEOUT!);
+    setTimeout(() => addCancelQueryListener.remove(), +process.env.COMMAND_TIMEOUT!);
+    return true;
+  });
+
   // message listeners
 
 
@@ -319,8 +373,7 @@ function setupListeners() {
     return true;
   });
 
-  async function updateInfo(community: Community) {
-    if (community.infoMessageContent === "") return;
+  function updateInfo(community: Community) {
     const newContent = getGroupLists(community);
     if (community.infoMessageContent === newContent) return;
     community.setInfoMessageContent(newContent);
@@ -328,7 +381,7 @@ function setupListeners() {
       chat_id: community.chatId,
       message_id: community.infoMessageId,
       parse_mode: "HTML"
-    });
+    }).then(() => {}).catch(() => {});
   }
 
   function initGroupMe(_user?: TelegramBot.User) {
@@ -441,7 +494,7 @@ function setupListeners() {
       if(query.data == null || query.data === "") return;
       const json = JSON.parse(query.data);
       if(json == null) return;
-      if(json[0] !== "hide_message" && json[0] !== "close_menu") return;
+      if(json[0] !== "hide_message" && json[0] !== "close_menu" && json[0] !== null) return;
       const msg = query.message;
       if(msg == null) return;
       const replyTo = msg.reply_to_message?.message_id;
