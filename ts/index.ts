@@ -4,14 +4,16 @@ import * as bot from "./bot.js";
 import Community from "./community.js";
 import Member from "./member.js";
 import Group from "./group.js";
-import { ObjectId } from "mongodb";
+import { Join, ObjectId } from "mongodb";
 import "dotenv/config";
+import JoinRequest from "./joinRequest.js";
 
 console.log("ready!");
 
 await Community.load();
+await JoinRequest.load();
 
-async function verifyAuthority(msg_query: Message | CallbackQuery, owner = false) {
+async function verifyAuthority(msg_query: Message | CallbackQuery, owner = false, community?: Community) {
   const msg = msg_query as Message;
   const query = msg_query as CallbackQuery;
   if (msg.chat != null) {
@@ -39,16 +41,22 @@ async function verifyAuthority(msg_query: Message | CallbackQuery, owner = false
     await bot.sendMessage(query.from.id, "Помилка!", buttons);
     return false;
   }
-  if (query.message.chat.type !== "supergroup") {
-    await bot.replyToMessage(query.message, "Це не груповий суперчат!", buttons);
-    return false;
-  }
-  let community = Community.list[query.message.chat.id];
-  if (community == null) {
-    await bot.replyToMessage(msg, "Спільнота не налаштована!\n\n/setup - налаштувати спільноту", buttons);
-    return false;
+  if(query.message.chat.type !== "private") {
+    if (query.message.chat.type !== "supergroup") {
+      await bot.replyToMessage(query.message, "Це не груповий суперчат!", buttons);
+      return false;
+    }
+    community = Community.list[query.message.chat.id];
+    if (community == null) {
+      await bot.replyToMessage(msg, "Спільнота не налаштована!\n\n/setup - налаштувати спільноту", buttons);
+      return false;
+    }
   }
   const user = query.from ?? {} as TelegramBot.User;
+  if(community == null) {
+    await bot.replyToMessage(msg, "Помилка!", buttons);
+    return false;
+  }
   const admin = community.admins.find(admin => admin.id === user.id && (!owner || admin.owner));
   if (admin == null) {
     await bot.replyToMessage(msg, "Ви не адміністратор спільноти!", buttons);
@@ -265,15 +273,23 @@ function setupListeners() {
     if (!await verifyAuthority(msg, true)) return true;
     const community = Community.list[msg.chat.id];
     const infoMessage = await bot.sendThreadMessage(msg.chat.id, bot.getThreadId(msg), getGroupLists(community));
-    if(infoMessage == null) return true;
-    await community.setInfoMessageContent(infoMessage.text ?? "");
     if (infoMessage == null) {
       const buttons = bot.getButtonsMarkup(bot.arrange([["Сховати", msg.message_id]]), "hide_message");
       await bot.replyToMessage(msg, "Помилка", buttons);
       return true;
     }
+    await community.setInfoMessageContent(infoMessage.text ?? "");
     await community.setInfoMessageId(infoMessage.message_id);
     await bot.deleteMessage(msg.chat.id, msg.message_id);
+    return true;
+  });
+
+  bot.addCommandListener("setchat", async msg => {
+    if (!await verifyAuthority(msg, true)) return true;
+    const community = Community.list[msg.chat.id];
+    await community.setBotThreadId(bot.getThreadId(msg));
+    const buttons = bot.getButtonsMarkup(bot.arrange([["Сховати", msg.message_id]]), "hide_message");
+    await bot.replyToMessage(msg, "Чат для взаємодії з ботом встановлено!", buttons);
     return true;
   });
 
@@ -373,6 +389,38 @@ function setupListeners() {
     return true;
   });
 
+  bot.addQueryListener("accept_join", async (query, data) => {
+    const msg = query.message;
+    if (msg == null) return false;
+    if(data == null) return false;
+    const req = JoinRequest.list[data];
+    if(req == null) return false;
+    const community = Community.list[req.community];
+    if(community == null) return false;
+    if (!await verifyAuthority(query, true, community)) return true;
+    await req.accept();
+    await bot.deleteMessage(msg.chat.id, msg.message_id);
+    const buttons = bot.getButtonsMarkup(bot.arrange(["Сховати"]), "hide_message");
+    await bot.sendMessage(msg.chat.id, "Користувача додано до спільноти!", buttons);
+    return true;
+  });
+
+  bot.addQueryListener("reject_join", async (query, data) => {
+    const msg = query.message;
+    if (msg == null) return false;
+    if(data == null) return false;
+    const req = JoinRequest.list[data];
+    if(req == null) return false;
+    const community = Community.list[req.community];
+    if(community == null) return false;
+    if (!await verifyAuthority(query, true, community)) return true;
+    await req.reject();
+    await bot.deleteMessage(msg.chat.id, msg.message_id);
+    const buttons = bot.getButtonsMarkup(bot.arrange(["Сховати"]), "hide_message");
+    await bot.sendMessage(msg.chat.id, "Заявку користувача відхилено!", buttons);
+    return true;
+  });
+
   function updateInfo(community: Community) {
     const newContent = getGroupLists(community);
     if (community.infoMessageContent === newContent) return;
@@ -384,11 +432,26 @@ function setupListeners() {
     }).then(() => {}).catch(() => {});
   }
 
-  function initGroupMe(_user?: TelegramBot.User) {
-    return async (initMsg: Message) => {
-      const user = _user ?? initMsg.from;
-      if (user == null) return false;
-      const community = Community.list[initMsg.chat.id];
+  function initGroupMe(id?: number, username?: string, first_name?: string, communityChatId?: TelegramBot.ChatId) {
+    if(id != null && (first_name ?? username) != null && communityChatId == null)
+      throw "initGroupme Error: communityChatId not defined!"
+    return async (initMsg: Message | null) => {
+      let user: {
+        id: number,
+        username?: string,
+        first_name?: string;
+      };
+      if(id != null && (first_name ?? username) != null) {
+        user = {
+          id, username,
+          first_name
+        }
+      }
+      else
+        user = initMsg?.from! ?? null;
+      if(user == null) return false;
+      if (id == null) return false;
+      const community = Community.list[initMsg?.chat.id ?? communityChatId!];
       if (community == null) return false;
       const member = new Member(user.id, user.first_name, user.username);
       const groups = community.groups.map(group => {
@@ -399,18 +462,27 @@ function setupListeners() {
           found = true;
           break;
         }
-        return [group.name + getSign(found), [group.id, !found]] as bot.option;
+        return [getSign(found) + group.name, [group.id, !found]] as bot.option;
       });
-      const buttons = bot.getButtonsMarkup(bot.arrange(groups, 2, [["ГОТОВО", initMsg.message_id]]), [...groups.map(() => "set_group"), "close_menu"]);
+      let buttons = bot.getButtonsMarkup(bot.arrange(groups, +process.env.BUTTONS_MARKUP!, [["ГОТОВО", initMsg?.message_id ?? null]]), [...groups.map(() => "set_group"), "close_menu"]);
       let buttons_hash = JSON.stringify(buttons);
-      const menuMessage = await bot.replyToMessage(initMsg, `<a href="tg://user?id=${member.id}">@${member.username ?? member.name}</a>, обери, будь ласка, групи, до яких хочеш приєднатися та натисни "ГОТОВО"!\n\nТи зможеш надалі змінювати список своїх груп за допомогою команди /groupme`, buttons);
+      let menuMessage: Message | null;
+      if(initMsg != null)
+        menuMessage = await bot.replyToMessage(initMsg, `<a href="tg://user?id=${member.id}">@${member.username ?? member.name}</a>, обери, будь ласка, групи, до яких хочеш приєднатися та натисни "ГОТОВО"!\n\nТи зможеш надалі змінювати список своїх груп за допомогою команди /groupme`, buttons);
+      else
+        if(community.botThreadId === -1)
+          menuMessage = await bot.sendMessage(community.chatId, `Ласкаво просимо! <a href="tg://user?id=${member.id}">@${member.username ?? member.name}</a>, обери, будь ласка, групи, до яких хочеш приєднатися та натисни "ГОТОВО"!\n\nТи зможеш надалі змінювати список своїх груп за допомогою команди /groupme`, buttons);
+        else
+          menuMessage = await bot.sendThreadMessage(community.chatId, community.botThreadId, `Ласкаво просимо! <a href="tg://user?id=${member.id}">@${member.username ?? member.name}</a>, обери, будь ласка, групи, до яких хочеш приєднатися та натисни "ГОТОВО"!\n\nТи зможеш надалі змінювати список своїх груп за допомогою команди /groupme`, buttons);
       if(menuMessage == null) return true;
       const abortListener = bot.addCommandListener("groupme", async msg => {
           if(msg.from?.id !== user.id) return false;
           abortListener.remove();
           menuCloseQueryListener.remove();
           menuQueryListener.remove();
+          if(menuMessage == null) return false;
           await bot.deleteMessage(msg.chat.id, menuMessage.message_id);
+          if(initMsg == null) return false;
           await bot.deleteMessage(msg.chat.id, initMsg.message_id);
           return false;
       });
@@ -418,19 +490,22 @@ function setupListeners() {
         if (query?.from.id !== user.id) return false;
         const msg = query.message;
         if (msg == null) return false;
+        if(menuMessage == null) return false;
         if(msg.message_id !== menuMessage.message_id) return false;
         menuCloseQueryListener.remove();
         menuQueryListener.remove();
         abortListener.remove();
         await bot.deleteMessage(msg.chat.id, msg.message_id);
-        await bot.deleteMessage(msg.chat.id, msg_id);
-        await updateInfo(community);
+        if(msg_id != null)
+          await bot.deleteMessage(msg.chat.id, msg_id);
+        updateInfo(community);
         return true;
       });
       const menuQueryListener = bot.addQueryListener("set_group", async (query, [group_id, state]: [string, boolean]) => {
         if (query?.from.id !== user.id) return false;
         const msg = query.message;
         if (msg == null) return false;
+        if(menuMessage == null) return false;
         if(msg.message_id !== menuMessage.message_id) return false;
         const community = Community.list[msg.chat.id];
         if (community == null) return false;
@@ -450,9 +525,9 @@ function setupListeners() {
             found = true;
             break;
           }
-          return [group.name + getSign(found), [group.id, !found]] as bot.option;
+          return [getSign(found) + group.name, [group.id, !found]] as bot.option;
         });
-        const buttons = bot.getButtonsMarkup(bot.arrange(groups, 2, [["ГОТОВО", initMsg.message_id]]), [...groups.map(() => "set_group"), "close_menu"]);
+        const buttons = bot.getButtonsMarkup(bot.arrange(groups, +process.env.BUTTONS_MARKUP!, [["ГОТОВО", initMsg?.message_id ?? null]]), [...groups.map(() => "set_group"), "close_menu"]);
         let new_buttons_hash = JSON.stringify(buttons);
         if (new_buttons_hash === buttons_hash) return true;
         buttons_hash = new_buttons_hash;
@@ -481,13 +556,35 @@ function setupListeners() {
     return "";
   }
 
-  // bot.bot.on("chat_member", async msg => {
-  //   if (msg.new_chat_member == null) return false;
-  //   const community = Community.list[msg.chat.id];
-  //   if (community == null) return false;
-  //   await initGroupMe(msg.new_chat_member.user)(msg);
-  //   return true;
-  // });
+  JoinRequest.onAccept = (req: JoinRequest, com: Community): Promise<void> => {
+    return new Promise((res, rej) => {
+      bot.bot.approveChatJoinRequest(com.chatId, req.id).then(async () => {
+        setTimeout(() => initGroupMe(req.id, req.username, req.name, com.chatId)(null), +process.env.NEW_USER_TIMEOUT!);
+        res();
+      }).catch((err) => {});
+    });
+  };
+
+  JoinRequest.onReject = (req: JoinRequest, com: Community): Promise<void> => {
+    return new Promise((res, rej) => {
+      bot.bot.declineChatJoinRequest(com.chatId, req.id).then(() => {
+        res();
+      }).catch(() => {});
+    });
+  };
+
+  bot.addEventListener("chat_join_request", async msg => {
+    const user = msg.from;
+    const chat = msg.chat;
+    const community = Community.list[chat.id];
+    if(community == null) return;
+    const req = new JoinRequest(user.id, user.username, user.first_name, community.chatId);
+    await req.initPromise;
+    const owner = community.getOwner();
+    if(owner == null) return;
+    const buttons = bot.getButtonsMarkup(bot.arrange([["Прийняти", req._id], ["Відхилити", req._id]]), ["accept_join", "reject_join"]);
+    await bot.sendMessage(owner.id, `Користувач <a href="tg://user?id=${req.id}">@${req.username ?? req.name}</a> хоче приєднатися до групи!`, buttons);
+  });
 
   bot.onUnhandledQuery(async query => {
     try {

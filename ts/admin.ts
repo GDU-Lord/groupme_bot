@@ -5,7 +5,7 @@ export default class Admin extends Member {
 
   initPromise: Promise<void>;
 
-  constructor(id: number, name: string, username: string | undefined, public community: Community["chatId"], public owner = false) {
+  constructor(id: number, name: string | undefined, username: string | undefined, public community: Community["chatId"], public owner = false) {
     super(id, name, username);
     this.initPromise = this.init();
   }

@@ -11,7 +11,7 @@ export default class Community {
     try {
       const list = await db.collection("communities").find().toArray() as Community[];
       for(const entry of list)
-        new Community(entry.chatId, entry.admins, entry.groups, entry._id, entry.infoMessageContent, entry.infoMessageId);
+        new Community(entry.chatId, entry.admins, entry.groups, entry._id, entry.infoMessageContent, entry.infoMessageId, entry.botThreadId);
     } catch(err) {
       console.error(err);
     }
@@ -26,7 +26,7 @@ export default class Community {
   admins: Admin[];
   groups: Group[];
 
-  constructor(public chatId: TelegramBot.ChatId, admins: Admin[], groups: Group[], _id?: ObjectId, public infoMessageContent: string = "", public infoMessageId: number = -1) {
+  constructor(public chatId: TelegramBot.ChatId, admins: Admin[], groups: Group[], _id?: ObjectId, public infoMessageContent: string = "", public infoMessageId: number = -1, public botThreadId: number = -1) {
     this._id = _id ?? new ObjectId;
     this.admins = admins.map(admin => new Admin(admin.id, admin.name, admin.username, admin.community, admin.owner));
     this.groups = groups.map(group => new Group(group.name, group.description, group.community, group.id, group.members));
@@ -41,6 +41,12 @@ export default class Community {
     } catch(err) {
       console.error(err);
     }
+  }
+
+  getOwner() {
+    for(const admin of this.admins)
+      if(admin.owner)
+        return admin;
   }
 
   async remove() {
@@ -108,6 +114,11 @@ export default class Community {
 
   async setInfoMessageId(infoMessageId: number) {
     this.infoMessageId = infoMessageId;
+    await this.update(true);
+  }
+
+  async setBotThreadId(botThreadId: number) {
+    this.botThreadId = botThreadId;
     await this.update(true);
   }
 
