@@ -38,6 +38,15 @@ export class MessageListener extends Listener {
     super(callback);
   }
 
+  init() {
+    MessageListener.list[this.id.toString()] = this;
+  }
+
+  remove() {
+    if(!(this.id.toString() in MessageListener.list)) return
+    delete MessageListener.list[this.id.toString()];
+  }
+
 }
 
 export class QueryListener extends Listener {
@@ -46,6 +55,15 @@ export class QueryListener extends Listener {
     public callback: (query: CallbackQuery, data?: any) => boolean | void | Promise<boolean | void>
   ) {
     super(callback);
+  }
+
+  init() {
+    QueryListener.list[this.id.toString()] = this;
+  }
+
+  remove() {
+    if(!(this.id.toString() in QueryListener.list)) return
+    delete QueryListener.list[this.id.toString()];
   }
   
 }

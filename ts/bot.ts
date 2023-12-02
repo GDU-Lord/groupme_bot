@@ -1,4 +1,4 @@
-import TelegramBot, { Message, Metadata } from "node-telegram-bot-api";
+import TelegramBot, { CallbackQuery, Message, Metadata } from "node-telegram-bot-api";
 import "dotenv/config";
 import { MessageListener, QueryListener } from "./listener.js";
 
@@ -11,48 +11,49 @@ export const bot = new TelegramBot(
  }
 );
 
-export function TryCatch<type>(func: () => type): type {
-  try {
-    return func();
-  } catch(err) {}
-  return null as unknown as type;
-}
-
 export function sendMessage(chatId: TelegramBot.ChatId, message: string, markup?: TelegramBot.SendMessageOptions["reply_markup"], thread_id: number = -1) {
-  return TryCatch(async () => await bot.sendMessage(chatId, message, {
-    reply_markup: markup,
-    parse_mode: "HTML",
-    message_thread_id: thread_id >= 0 ? thread_id : undefined
-  }));
+  return new Promise<TelegramBot.Message | null>((res, rej) => {
+    bot.sendMessage(chatId, message, {
+      reply_markup: markup,
+      parse_mode: "HTML",
+      message_thread_id: thread_id >= 0 ? thread_id : undefined
+    }).then((data) => res(data)).catch(() => res(null));
+  });
 }
 
 export function sendThreadMessage(chatId: TelegramBot.ChatId, thread_id: number = -1, message: string, markup?: TelegramBot.SendMessageOptions["reply_markup"]) {
-  return TryCatch(async () => await bot.sendMessage(chatId, message, {
-    reply_markup: markup,
-    parse_mode: "HTML",
-    message_thread_id: thread_id
-  }));
+  return new Promise<TelegramBot.Message | null>((res, rej) => {
+    bot.sendMessage(chatId, message, {
+      reply_markup: markup,
+      parse_mode: "HTML",
+      message_thread_id: thread_id
+    }).then((data) => res(data)).catch(() => res(null));
+  });
 }
 
 export function replyToMessage(requestMessage: Message, message: string, markup?: TelegramBot.SendMessageOptions["reply_markup"]) {
-  return TryCatch(async () => await bot.sendMessage(requestMessage.chat.id, message, {
-    reply_markup: markup,
-    parse_mode: "HTML",
-    reply_to_message_id: requestMessage.message_id
-  }));
+  return new Promise<TelegramBot.Message | null>((res, rej) => {
+    bot.sendMessage(requestMessage.chat.id, message, {
+      reply_markup: markup,
+      parse_mode: "HTML",
+      reply_to_message_id: requestMessage.message_id
+    }).then((data) => res(data)).catch(() => res(null));
+  });
 }
 
 export function deleteMessage(chatId: TelegramBot.ChatId, messageId: number) {
-  return TryCatch(async () => await bot.deleteMessage(chatId, messageId));
+  return new Promise<boolean>((res, rej) => {
+    bot.deleteMessage(chatId, messageId).then((data) => res(data)).catch(() => res(false));
+  });
 }
 
 export function addQueryListener(selector: string, callback: QueryListener["callback"]) {
   return new QueryListener((query) => {
-    TryCatch(() => {
+    try {
       const data = JSON.parse(query.data as string) as [string, any?];
-      if(data[0] !== selector) return;
-      callback(query, data[1]);
-    });
+      if(data[0] !== selector) return false;
+      return callback(query, data[1]);
+    } catch {}
   });
 } 
 
@@ -74,7 +75,7 @@ export function getButtonsMarkup(options: option[][], tags: string | string[]): 
   const inline_keyboard: TelegramBot.InlineKeyboardButton[][] = options.map((row, rowIndex, rows) => row.map((option, index) => {
     const text = option instanceof Array ? option[0] : option;
     const data = option instanceof Array ? option[1] : undefined;
-    const tag = tags instanceof Array ? tags[rowIndex * rows[0].length + index] : tags;
+    const tag = tags instanceof Array ? tags[(rowIndex-1) * rows[0].length + rows[Math.max(rowIndex-1, 0)].length + index] : tags;
     return {
       text: text,
       callback_data: JSON.stringify([tag, data]),
@@ -93,22 +94,24 @@ bot.addListener("message", async (msg, meta) => {
   for(const i in MessageListener.list) {
     const listener = MessageListener.list[i];
     const res = await listener.callback(msg, meta);
-    if(res) break;
+    if(res) return;
   }
+  _onUnhandledMessage(msg, meta);
 });
 
 bot.addListener("callback_query", async (query) => {
   for(const i in QueryListener.list) {
     const listener = QueryListener.list[i];
-    const res = listener.callback(query);
-    // if(res) break;
+    const res = await listener.callback(query);
+    if(res) return;
   }
+  _onUnhandledQuery(query);
 });
 
 export function addCommandListener(selector: string, callback: MessageListener["callback"]) {
   return new MessageListener(async (msg, meta) => {
-    if(msg.text !== "/" + selector && msg.text !== "/" + selector + "@" + (await bot.getMe()).username) return;
-    callback(msg, meta);
+    if(msg.text !== "/" + selector && msg.text !== "/" + selector + "@" + (await bot.getMe()).username) return false;
+    return callback(msg, meta);
   });
 }
 
@@ -116,6 +119,17 @@ export function getThreadId(msg: Message) {
   const t = msg.message_thread_id ?? -Infinity;
   const id = msg.message_id;
   return t+1 === id ? 0 : t;
+}
+
+let _onUnhandledQuery: (query: CallbackQuery) => void = () => {};
+let _onUnhandledMessage: (query: Message, meta: Metadata) => void = () => {};
+
+export function onUnhandledQuery(listener: (query: CallbackQuery) => void): void {
+  _onUnhandledQuery = listener;
+}
+
+export function onUnhandledMessage(listener: (query: Message, meta: Metadata) => void): void {
+  _onUnhandledMessage = listener;
 }
 
 export const addEventListener = bot.on.bind(bot);
