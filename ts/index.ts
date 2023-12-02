@@ -70,21 +70,25 @@ export async function onCommunityUpdate(community: Community) {
 }
 
 function getGroupLists(community: Community) {
+  const allMembers = community.getMemberCount();
   let groups = community.groups.map(group => {
-    return `<b><u>Група "${group.name}"</u></b>\n${group.description}\n\n${mentionMembers(group.members)}`;
+    const [mentions, number] = mentionMembers(group.members);
+    const percentage = (number / allMembers.length * 100).toFixed(0);
+    console.log(percentage, number, allMembers.length);
+    return `<b><u>Група "${group.name}"</u></b> ${percentage}% (${number})\n${group.description}\n\n${mentions}`;
   });
   return ["<b><u><i>СПИСОК ГРУП</i></u></b>", ...groups].join("\n- - - - - - - - - - - - - - - - - - - - - - - - \n");
 }
 
-function mentionMembers(members: Group["members"]) {
+function mentionMembers(members: Group["members"]): [string, number] {
   const mentions: string[] = [];
   for (const i in members) {
     const member = members[i];
     mentions.push(`<a href="tg://user?id=${member.id}">@${member.username ?? member.name}</a>`);
   }
   if (mentions.length === 0)
-    return "НЕМАЄ УЧАСНИКІВ"
-  return mentions.join(" ");
+    return ["НЕМАЄ УЧАСНИКІВ", 0]
+  return [mentions.join(" "), mentions.length];
 }
 
 function setupListeners() {
@@ -293,6 +297,16 @@ function setupListeners() {
     return true;
   });
 
+  bot.addCommandListener("update", async msg => {
+    if (!await verifyAuthority(msg, true)) return true;
+    const community = Community.list[msg.chat.id];
+    if(community == null) return true;
+    updateInfo(community);
+    const buttons = bot.getButtonsMarkup(bot.arrange([["Сховати", msg.message_id]]), "hide_message");
+    await bot.replyToMessage(msg, "Список груп оновлено!", buttons);
+    return true;
+  });
+
   bot.addCommandListener("addmember", async initMsg => {
     if (!await verifyAuthority(initMsg)) return true;
     const community = Community.list[initMsg.chat.id];
@@ -300,7 +314,7 @@ function setupListeners() {
       return [group.name, [group.id, initMsg.message_id]] as bot.option;
     });
     const buttons = bot.getButtonsMarkup(bot.arrange(groups, 4, [["Скасувати", initMsg.message_id]]), [...groups.map(() => "add_member"), "cancel_add_member"]);
-    await bot.replyToMessage(initMsg, "Оберіть групу, в яку хочете додати учасника <b>РЕДАГУВАТИ</b>", buttons);
+    await bot.replyToMessage(initMsg, "Оберіть групу, в яку хочете додати учасника", buttons);
     const addCancelQueryListener = bot.addQueryListener("cancel_add_member", async (query, msg_id) => {
       if (query.from?.id !== initMsg.from?.id) return false;
       const msg = query.message;
@@ -344,6 +358,7 @@ function setupListeners() {
         mentionListener.remove();
         mentionCancelListener.remove();
         if (!await verifyAuthority(query)) return true;
+        // ADD MEMBER
         const buttons = bot.getButtonsMarkup(bot.arrange([["Сховати", mentionMsg.message_id]]), "hide_message");
         await bot.replyToMessage(mentionMsg, 'Учасника "' + name +'" додано до групи "' + group.name + '"!', buttons);
         return true;
@@ -434,7 +449,7 @@ function setupListeners() {
 
   function initGroupMe(id?: number, username?: string, first_name?: string, communityChatId?: TelegramBot.ChatId) {
     if(id != null && (first_name ?? username) != null && communityChatId == null)
-      throw "initGroupme Error: communityChatId not defined!"
+      throw "initGroupme Error: communityChatId not defined!";
     return async (initMsg: Message | null) => {
       let user: {
         id: number,
@@ -450,7 +465,11 @@ function setupListeners() {
       else
         user = initMsg?.from! ?? null;
       if(user == null) return false;
-      if (id == null) return false;
+      if(initMsg != null && initMsg.chat.type !== "supergroup") {
+        const buttons = bot.getButtonsMarkup(bot.arrange(["Сховати"]), "hide_message");
+        await bot.replyToMessage(initMsg, "Це не груповий чат!", buttons);
+        return false;
+      }
       const community = Community.list[initMsg?.chat.id ?? communityChatId!];
       if (community == null) return false;
       const member = new Member(user.id, user.first_name, user.username);
@@ -466,14 +485,17 @@ function setupListeners() {
       });
       let buttons = bot.getButtonsMarkup(bot.arrange(groups, +process.env.BUTTONS_MARKUP!, [["ГОТОВО", initMsg?.message_id ?? null]]), [...groups.map(() => "set_group"), "close_menu"]);
       let buttons_hash = JSON.stringify(buttons);
-      let menuMessage: Message | null;
+      let menuMessage: Message | null = null;
+      let menuPrivateMessage: Message | null = null;
       if(initMsg != null)
         menuMessage = await bot.replyToMessage(initMsg, `<a href="tg://user?id=${member.id}">@${member.username ?? member.name}</a>, обери, будь ласка, групи, до яких хочеш приєднатися та натисни "ГОТОВО"!\n\nТи зможеш надалі змінювати список своїх груп за допомогою команди /groupme`, buttons);
-      else
+      else {
+        menuPrivateMessage = await bot.sendMessage(user.id, `Ласкаво просимо! <a href="tg://user?id=${member.id}">@${member.username ?? member.name}</a>, обери, будь ласка, групи, до яких хочеш приєднатися та натисни "ГОТОВО"!\n\nТи зможеш надалі змінювати список своїх груп за допомогою команди /groupme у груповому чаті!`, buttons);
         if(community.botThreadId === -1)
           menuMessage = await bot.sendMessage(community.chatId, `Ласкаво просимо! <a href="tg://user?id=${member.id}">@${member.username ?? member.name}</a>, обери, будь ласка, групи, до яких хочеш приєднатися та натисни "ГОТОВО"!\n\nТи зможеш надалі змінювати список своїх груп за допомогою команди /groupme`, buttons);
         else
           menuMessage = await bot.sendThreadMessage(community.chatId, community.botThreadId, `Ласкаво просимо! <a href="tg://user?id=${member.id}">@${member.username ?? member.name}</a>, обери, будь ласка, групи, до яких хочеш приєднатися та натисни "ГОТОВО"!\n\nТи зможеш надалі змінювати список своїх груп за допомогою команди /groupme`, buttons);
+      }
       if(menuMessage == null) return true;
       const abortListener = bot.addCommandListener("groupme", async msg => {
           if(msg.from?.id !== user.id) return false;
@@ -484,6 +506,8 @@ function setupListeners() {
           await bot.deleteMessage(msg.chat.id, menuMessage.message_id);
           if(initMsg == null) return false;
           await bot.deleteMessage(msg.chat.id, initMsg.message_id);
+          if(menuPrivateMessage == null) return false;
+          await bot.deleteMessage(menuPrivateMessage.chat.id, menuPrivateMessage.message_id);
           return false;
       });
       const menuCloseQueryListener = bot.addQueryListener("close_menu", async (query, msg_id) => {

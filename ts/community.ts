@@ -4,6 +4,7 @@ import db from "./db.js";
 import Group from "./group.js";
 import TelegramBot from "node-telegram-bot-api";
 import { onCommunityUpdate } from "./index.js";
+import Member from "./member.js";
 
 export default class Community {
 
@@ -47,6 +48,17 @@ export default class Community {
     for(const admin of this.admins)
       if(admin.owner)
         return admin;
+  }
+  
+  getMemberCount() {
+    const list: {
+      [key: string]: Member;
+    } = {};
+    for(const i in this.groups)
+      for(const j in this.groups[i].members)
+        if(!(this.groups[i].members[j].id.toString() in list))
+          list[this.groups[i].members[j].id.toString()] = this.groups[i].members[j];
+    return Object.values(list);
   }
 
   async remove() {
