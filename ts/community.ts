@@ -3,7 +3,6 @@ import Admin from "./admin.js";
 import db from "./db.js";
 import Group from "./group.js";
 import TelegramBot from "node-telegram-bot-api";
-import { onCommunityUpdate } from "./index.js";
 import Member from "./member.js";
 
 export default class Community {
@@ -12,7 +11,7 @@ export default class Community {
     try {
       const list = await db.collection("communities").find().toArray() as Community[];
       for(const entry of list)
-        new Community(entry.chatId, entry.admins, entry.groups, entry._id, entry.infoMessageContent, entry.infoMessageId, entry.botThreadId);
+        new Community(entry.chatId, entry.admins, entry.groups, entry.members, entry._id, entry.infoMessageContent, entry.infoThreadId, entry.infoMessageId, entry.botThreadId);
     } catch(err) {
       console.error(err);
     }
@@ -26,18 +25,36 @@ export default class Community {
   _id: ObjectId;
   admins: Admin[];
   groups: Group[];
+  members: Member[];
 
-  constructor(public chatId: TelegramBot.ChatId, admins: Admin[], groups: Group[], _id?: ObjectId, public infoMessageContent: string = "", public infoMessageId: number = -1, public botThreadId: number = -1) {
+  constructor(public chatId: TelegramBot.ChatId, admins: Admin[], groups: Group[], members: Member[], _id?: ObjectId, public infoMessageContent: string = "", public infoThreadId: number = -1, public infoMessageId: number = -1, public botThreadId: number = -1) {
     this._id = _id ?? new ObjectId;
     this.admins = admins.map(admin => new Admin(admin.id, admin.name, admin.username, admin.community, admin.owner));
-    this.groups = groups.map(group => new Group(group.name, group.description, group.community, group.id, group.members));
+    this.groups = groups.map(group => new Group(group.name, group.description, group.community, group.id, group.members, group.groupChat));
+    const savedMembers = members?.map(member => new Member(member.id, member.name, member.username)) ?? [];
+    const activeMembers = this.getMemberCount();
+    this.members = [];
+    
+    for(const m of activeMembers) {
+      if(this.members.find(mem => mem.id === m.id) == null)
+        this.members.push(m);
+    }
+
+    for(const m of savedMembers) {
+      if(this.members.find(mem => mem.id === m.id) == null)
+        this.members.push(m);
+    }
+
     this.initPromise = this.init(_id == null);
   }
 
   private async init(create: boolean) {
     try {
+      await this.updateMembers(false);
       if(create)
         await db.collection("communities").insertOne(this);
+      else
+        await this.update();
       Community.list[this.chatId] = this;
     } catch(err) {
       console.error(err);
@@ -56,8 +73,8 @@ export default class Community {
     } = {};
     for(const i in this.groups)
       for(const j in this.groups[i].members)
-        if(!(this.groups[i].members[j].id.toString() in list))
-          list[this.groups[i].members[j].id.toString()] = this.groups[i].members[j];
+        if(!(j in list))
+          list[j] = this.groups[i].members[j];
     return Object.values(list);
   }
 
@@ -93,6 +110,17 @@ export default class Community {
     await this.update();
   }
 
+  async updateMembers(update: boolean = true) {
+    const members: Member[] = [];
+    this.members.forEach(m => {
+      if(members.find(mem => mem.id === m.id) == null)
+        members.push(m);
+    });
+    this.members = members;
+    if(update)
+      await this.update();
+  }
+
   async removeAdmin(admin: Admin) {
     const index = this.admins.findIndex(findEntity<Admin>(admin));
     if(index === -1) return console.error("Community error: 'admin' not found at 'removeAdmin(admin)': " + admin);
@@ -124,6 +152,11 @@ export default class Community {
     await this.update(true);
   }
 
+  async setInfoThreadId(infoThreadId: number) {
+    this.infoThreadId = infoThreadId;
+    await this.update(true);
+  }
+
   async setInfoMessageId(infoMessageId: number) {
     this.infoMessageId = infoMessageId;
     await this.update(true);
@@ -135,7 +168,7 @@ export default class Community {
   }
 
   onUpdate(community: Community) {
-    onCommunityUpdate(community);
+    // onCommunityUpdate(community);
   }
 
 }

@@ -11,7 +11,8 @@ export default class Group {
     public id: ObjectId = new ObjectId,
     public members: {
       [key: string]: Member
-    } = {}
+    } = {},
+    public groupChat: number | null = null,
   ) {}
 
   addMember(member: Member) {
