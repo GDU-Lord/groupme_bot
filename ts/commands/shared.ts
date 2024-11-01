@@ -33,6 +33,7 @@ export enum mode {
   EDITGROUP = "/editgroup",
   SETCHAT = "/setchat",
   CALL = "/call",
+  GATHER = "/gather",
   CANCEL = "/cancel",
   BOTCHAT = "/botchat",
   NONE = "NONE",
@@ -72,6 +73,7 @@ export const cancelButton = new ButtonDeleteOption("Скасувати")
 
 export const groupInfo = new Insert('<b><u>Група "{title}"</u></b> {percentage}% ({number})\n{description}\n\n{members}');
 export const memberMention = new Insert('<a href="tg://user?id={id}">@{username}</a>');
+export const memberMentionSymbol = new Insert('<a href="tg://user?id={id}">👤</a>');
 export const emitGroupsInfo = new StateInsertEmitter(setup, "<b><i><u>СПИСОК ГРУП</u></i></b>\n- - - - - - - - - - - - - - - - - - - - - - - -\n{data.groupsInfo}", responseTarget.LOCAL);
 
 export function getGroupLists(community: Community) {
@@ -90,11 +92,12 @@ export function getGroupLists(community: Community) {
   return groups.join("\n- - - - - - - - - - - - - - - - - - - - - - - - \n");
 }
 
-export function mentionMembers(members: Group["members"]): [string, number] {
+export function mentionMembers(members: Group["members"], symbols: boolean = false): [string, number] {
   const mentions: string[] = [];
   for (const i in members) {
     const member = members[i];
-    mentions.push(memberMention.getText({
+    const mention = symbols ? memberMentionSymbol : memberMention;
+    mentions.push(mention.getText({
       id: member.id,
       username: member.username ?? member.name
     }));

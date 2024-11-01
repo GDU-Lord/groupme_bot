@@ -25,6 +25,17 @@ export function verifyMode(md: mode, positive: chain, negative: chain) {
   }
 }
 
+export function verifyRole(positive: chain, negative: chain) {
+  return async function(input: TelegramBot.Message) {
+    if(input.from == null) return negative;
+    const data = await setup.bot.getChatMember(input.chat.id, input.from.id);
+    console.log(data.status, "VERIFY ROLE");
+    if(data.status === "administrator" || data.status === "creator")
+      return positive;
+    return negative;
+  }
+}
+
 export function setData<msg extends (TelegramBot.Message | ExtendedQuery<any>) = TelegramBot.Message>(key: string, data: (msg: msg, meta?: TelegramBot.Metadata) => any) {
   return async function (msg: msg, meta?: TelegramBot.Metadata) {
     const state = setup.getState(msg.from?.id)!.state;

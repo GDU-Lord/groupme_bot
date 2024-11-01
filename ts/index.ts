@@ -13,6 +13,7 @@ import _onJoin from "./commands/_onjoin.js";
 import _onLeave from "./commands/_onleave.js";
 import cancel from "./commands/cancel.js";
 import botchat from "./commands/botchat.js";
+import gather from "./commands/gather.js";
 
 await Community.load();
 await JoinRequest.load();
@@ -26,6 +27,7 @@ function setupListeners() {
   groupme();
   member();
   setchat();
+  gather();
   call();
   cancel();
   botchat();

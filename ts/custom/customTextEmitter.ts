@@ -3,7 +3,7 @@ import { MessageListener, QueryListener } from "../core/listener.js";
 import MessageEmitter from "../core/message.js";
 import Insert from "./insert.js";
 
-export default class StateInsertEmitter extends MessageEmitter<string, QueryListener | MessageListener> {
+export default class CustomTextEmitter extends MessageEmitter<string, QueryListener | MessageListener> {
 
   insert: Insert;
 
