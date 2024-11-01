@@ -157,7 +157,7 @@ export class MessageResponse<A extends any[] = [
     this.match = match;
 
     this.check(async (msg, meta) => {
-      if(this.match === "" || msg.text?.match(this.match) != null)
+      if(this.match === "" || msg.text?.search(this.match) === 0)
         return chain.on;
       return chain.escape;
     });
